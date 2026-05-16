@@ -127,8 +127,8 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           kubectl config current-context
-          kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
-          echo
+          $server = kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+          Write-Host "Kubernetes API server: $server"
           kubectl cluster-info
 
       - name: Apply Kubernetes manifests
