@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../components/Navbar';
 import { taskService } from '../services/api';
 import { toast } from 'react-toastify';
@@ -24,12 +24,7 @@ const Dashboard = () => {
     tags: []
   });
 
-  useEffect(() => {
-    fetchTasks();
-    fetchStats();
-  }, [filters]);
-
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       const response = await taskService.getTasks(filters);
       setTasks(response.data.tasks);
@@ -38,16 +33,21 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await taskService.getTaskStats();
       setStats(response.data.stats);
     } catch (error) {
       console.error('Failed to fetch stats');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+    fetchStats();
+  }, [fetchTasks, fetchStats]);
 
   const handleFilterChange = (e) => {
     setFilters({
