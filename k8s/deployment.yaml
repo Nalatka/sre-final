@@ -81,7 +81,7 @@ spec:
       containers:
         - name: backend
           image: task-manager-backend:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
           envFrom:
@@ -120,7 +120,7 @@ spec:
       containers:
         - name: frontend
           image: task-manager-frontend:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
           readinessProbe:

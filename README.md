@@ -32,7 +32,7 @@ Docker Compose is used for local development and review because a teammate can s
 
 Terraform provisions a local Minikube Kubernetes environment. This keeps the project reproducible from scratch without paid cloud credentials while still matching the assignment requirement to deploy through a Kubernetes cluster.
 
-Kubernetes manifests are plain YAML files split into deployments, services, and ingress. This keeps the cluster deployment easy to understand and leaves room for a teammate to add CI/CD, TLS, autoscaling, and monitoring later.
+Kubernetes manifests are plain YAML files split into deployments, services, and ingress. This keeps the cluster deployment easy to understand while still supporting automated rollout updates from the CI/CD pipeline.
 
 ## Run Locally With Docker Compose
 
@@ -228,6 +228,56 @@ kubectl --context task-manager delete -f k8s/service.yaml
 kubectl --context task-manager delete -f k8s/deployment.yaml
 ```
 
+## CI/CD Pipeline (Person 2 Scope)
+
+The CI/CD pipeline is implemented in:
+
+```text
+.github/workflows/main.yml
+```
+
+Pipeline stages:
+
+- `test` (push + PR to `main`): installs dependencies, runs backend syntax check, runs frontend tests, builds frontend
+- `build-and-push` (push to `main`): builds backend and frontend images and pushes both to GHCR with `latest` and commit-SHA tags
+- `deploy` (push to `main`): applies Kubernetes manifests, injects JWT secret from GitHub Secrets, performs rolling image update, waits for rollout status
+
+Registry integration:
+
+- Container registry: GitHub Container Registry (`ghcr.io`)
+- Backend image: `ghcr.io/<owner>/<repo>/task-manager-backend:<tag>`
+- Frontend image: `ghcr.io/<owner>/<repo>/task-manager-frontend:<tag>`
+- Authentication: `${{ github.actor }}` and `${{ secrets.GITHUB_TOKEN }}`
+
+Required GitHub repository secrets:
+
+- `KUBE_CONFIG_DATA`: base64-encoded kubeconfig for the target cluster
+- `JWT_SECRET`: production JWT secret for backend runtime
+
+Encode kubeconfig for `KUBE_CONFIG_DATA`:
+
+Linux/macOS:
+
+```bash
+cat ~/.kube/config | base64 -w 0
+```
+
+Windows PowerShell:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.kube\config"))
+```
+
+Manual trigger option:
+
+- `workflow_dispatch` is enabled for manual reruns from the Actions tab
+
+Evidence checklist for report/defense:
+
+- Screenshot of successful GitHub Actions run with `test`, `build-and-push`, and `deploy` jobs green
+- Screenshot from GHCR Packages showing both backend and frontend images with SHA tags
+- Screenshot from deploy logs showing successful rollout (`rollout status` success)
+
 ## Environment Variables
 
 Backend:
@@ -252,10 +302,9 @@ For Kubernetes, update `k8s/deployment.yaml` before applying to a shared cluster
 
 This setup is intentionally simple and suitable for a university SRE capstone. The next production-readiness improvements are:
 
-- CI/CD pipeline for image build, test, scan, and deploy
-- Container image registry
 - TLS for ingress
-- Strong secret management
+- External secret manager integration (for example Vault, AWS Secrets Manager, or GCP Secret Manager)
+- Container vulnerability scanning (for example Trivy in CI)
 - Kubernetes resource requests and limits after measuring real usage
 - Centralized logging
 - Grafana dashboards and alert routing
