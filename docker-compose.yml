@@ -1,50 +1,104 @@
-version: "3.8"
-
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./backend/.env
-    depends_on:
-      - mongo
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    env_file:
-      - ./frontend/.env
-    depends_on:
-      - backend
-
   mongo:
-    image: mongo
+    image: mongo:7.0
+    container_name: task-manager-mongo
+    restart: unless-stopped
     ports:
       - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - task-manager
+
+  backend:
+    build:
+      context: ./backend
+    container_name: task-manager-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGODB_URI: mongodb://mongo:27017/taskmanager
+      JWT_SECRET: change-this-local-secret
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+    networks:
+      - task-manager
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_API_URL: http://localhost:5000/api
+    container_name: task-manager-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - task-manager
 
   mongo-express:
-    image: mongo-express
+    image: mongo-express:1.0.2
+    container_name: task-manager-mongo-express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_BASICAUTH: false
     ports:
       - "8081:8081"
-    environment:
-      - ME_CONFIG_MONGODB_SERVER=mongo
+    depends_on:
+      - mongo
+    networks:
+      - task-manager
+    profiles:
+      - tools
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.55.1
+    container_name: task-manager-prometheus
+    restart: unless-stopped
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
     ports:
       - "9090:9090"
+    depends_on:
+      - backend
+    networks:
+      - task-manager
+    profiles:
+      - monitoring
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:11.3.1
+    container_name: task-manager-grafana
+    restart: unless-stopped
     ports:
       - "3001:3000"
+    networks:
+      - task-manager
+    profiles:
+      - monitoring
 
   node-exporter:
-    image: prom/node-exporter
+    image: prom/node-exporter:v1.8.2
+    container_name: task-manager-node-exporter
+    restart: unless-stopped
     ports:
       - "9100:9100"
+    networks:
+      - task-manager
+    profiles:
+      - monitoring
+
+volumes:
+  mongo-data:
+
+networks:
+  task-manager:
+    driver: bridge

@@ -1,0 +1,10 @@
+project_name = "task-manager"
+minikube_profile = "task-manager"
+minikube_driver = "docker"
+minikube_cpus = 2
+minikube_memory = "4096mb"
+namespace = "task-manager"
+backend_image_name = "task-manager-backend:latest"
+frontend_image_name = "task-manager-frontend:latest"
+frontend_api_url = "/api"
+app_hostname = "task-manager.local"
