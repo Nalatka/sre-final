@@ -118,13 +118,13 @@ jobs:
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
-        shell: pwsh
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path "$HOME/.kube" | Out-Null
           [IO.File]::WriteAllBytes("$HOME/.kube/config", [Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}"))
 
       - name: Check cluster connectivity
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl config current-context
           kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
@@ -132,25 +132,25 @@ jobs:
           kubectl cluster-info
 
       - name: Apply Kubernetes manifests
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/ingress.yaml
 
       - name: Inject runtime JWT secret
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl -n "${env:K8S_NAMESPACE}" create secret generic task-manager-secret --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy new backend and frontend images
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl -n "${env:K8S_NAMESPACE}" set image deployment/backend backend=${{ needs.build-and-push.outputs.backend_image }}:${{ github.sha }}
           kubectl -n "${env:K8S_NAMESPACE}" set image deployment/frontend frontend=${{ needs.build-and-push.outputs.frontend_image }}:${{ github.sha }}
 
       - name: Wait for rollout to finish
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl -n "${env:K8S_NAMESPACE}" rollout status deployment/backend --timeout=180s
           kubectl -n "${env:K8S_NAMESPACE}" rollout status deployment/frontend --timeout=180s
