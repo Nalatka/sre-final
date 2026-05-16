@@ -105,7 +105,7 @@ jobs:
             ${{ steps.images.outputs.frontend_image }}:${{ github.sha }}
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows, x64]
     needs: build-and-push
     if: github.event_name != 'pull_request'
     permissions:
@@ -122,6 +122,13 @@ jobs:
           mkdir -p "${HOME}/.kube"
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > "${HOME}/.kube/config"
           chmod 600 "${HOME}/.kube/config"
+
+      - name: Check cluster connectivity
+        run: |
+          kubectl config current-context
+          kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+          echo
+          kubectl cluster-info
 
       - name: Apply Kubernetes manifests
         run: |
