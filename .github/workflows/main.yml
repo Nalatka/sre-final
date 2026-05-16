@@ -117,11 +117,36 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Configure kubeconfig
+      - name: Start kind cluster
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
+          # Check if kind cluster already exists
+          $clusterExists = & kind get clusters 2>$null | Select-String -Pattern "assignment6"
+          
+          if (-not $clusterExists) {
+            Write-Host "Creating kind cluster: assignment6"
+            & kind create cluster --name assignment6 --wait 5m
+          } else {
+            Write-Host "Kind cluster assignment6 already exists"
+          }
+          
+          # Set kubeconfig
+          & kind get kubeconfig --name assignment6 | Out-File -FilePath "$HOME/.kube/config" -Encoding utf8
+          Write-Host "Kubeconfig configured"
+
+      - name: Configure kubeconfig from secret (fallback)
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          # Create .kube directory if it doesn't exist
           New-Item -ItemType Directory -Force -Path "$HOME/.kube" | Out-Null
-          [IO.File]::WriteAllBytes("$HOME/.kube/config", [Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}"))
+          
+          # Only use secret if provided
+          if ("${{ secrets.KUBE_CONFIG_DATA }}" -ne "") {
+            [IO.File]::WriteAllBytes("$HOME/.kube/config", [Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}"))
+            Write-Host "Kubeconfig loaded from secret"
+          } else {
+            Write-Host "Using kubeconfig from kind cluster"
+          }
 
       - name: Check cluster connectivity
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -130,6 +155,38 @@ jobs:
           $server = kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
           Write-Host "Kubernetes API server: $server"
           kubectl cluster-info
+          Write-Host "Waiting for cluster to be ready..."
+          kubectl wait --for=condition=ready node --all --timeout=300s
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load images into kind cluster
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          $repo_lower = "${{ github.repository }}".ToLower()
+          $backendImage = "ghcr.io/$repo_lower/task-manager-backend:${{ github.sha }}"
+          $frontendImage = "ghcr.io/$repo_lower/task-manager-frontend:${{ github.sha }}"
+          
+          Write-Host "Loading backend image into kind: $backendImage"
+          & docker pull $backendImage
+          & kind load docker-image $backendImage --name assignment6
+          
+          Write-Host "Loading frontend image into kind: $frontendImage"
+          & docker pull $frontendImage
+          & kind load docker-image $frontendImage --name assignment6
+
+      - name: Inject runtime JWT secret
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+        run: |
+          kubectl -n "${env:K8S_NAMESPACE}" create secret generic task-manager-secret --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Kubernetes manifests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
@@ -138,20 +195,24 @@ jobs:
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/ingress.yaml
 
-      - name: Inject runtime JWT secret
+      - name: Verify deployments
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
-          kubectl -n "${env:K8S_NAMESPACE}" create secret generic task-manager-secret --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy new backend and frontend images
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
-        run: |
-          kubectl -n "${env:K8S_NAMESPACE}" set image deployment/backend backend=${{ needs.build-and-push.outputs.backend_image }}:${{ github.sha }}
-          kubectl -n "${env:K8S_NAMESPACE}" set image deployment/frontend frontend=${{ needs.build-and-push.outputs.frontend_image }}:${{ github.sha }}
+          kubectl -n "${env:K8S_NAMESPACE}" get deployments
+          kubectl -n "${env:K8S_NAMESPACE}" get pods -o wide
 
       - name: Wait for rollout to finish
         shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
+          Write-Host "Waiting for MongoDB deployment..."
+          kubectl -n "${env:K8S_NAMESPACE}" rollout status deployment/mongo --timeout=180s
+          
+          Write-Host "Waiting for backend deployment..."
           kubectl -n "${env:K8S_NAMESPACE}" rollout status deployment/backend --timeout=180s
+          
+          Write-Host "Waiting for frontend deployment..."
           kubectl -n "${env:K8S_NAMESPACE}" rollout status deployment/frontend --timeout=180s
+          
+          Write-Host "All deployments rolled out successfully"
           kubectl -n "${env:K8S_NAMESPACE}" get pods -o wide
+          kubectl -n "${env:K8S_NAMESPACE}" get svc
