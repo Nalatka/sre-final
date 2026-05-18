@@ -109,29 +109,42 @@ jobs:
     if: github.event_name != 'pull_request'
     permissions:
       contents: read
-    env:
-      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Kind
+        uses: helm/kind-action@v1.8.0
+        with:
+          cluster_name: assignment6
+          wait: 5m
+
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
-
-      - name: Configure kubeconfig from secret
-        run: |
-          if [ -z "${KUBE_CONFIG_DATA}" ]; then
-            echo "KUBE_CONFIG_DATA secret is required for deploy job"
-            exit 1
-          fi
-          echo "${KUBE_CONFIG_DATA}" | base64 -d > "${RUNNER_TEMP}/kubeconfig"
-          echo "KUBECONFIG=${RUNNER_TEMP}/kubeconfig" >> "${GITHUB_ENV}"
 
       - name: Check cluster connectivity
         run: |
           kubectl config current-context
           kubectl cluster-info
           kubectl get nodes
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Load backend image into kind
+        run: |
+          repo_lower="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          backend_image="ghcr.io/${repo_lower}/${BACKEND_IMAGE_NAME}:${{ github.sha }}"
+          docker pull "${backend_image}"
+          kind load docker-image "${backend_image}" --name assignment6
+
+      - name: Load frontend image into kind
+        run: |
+          repo_lower="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          frontend_image="ghcr.io/${repo_lower}/${FRONTEND_IMAGE_NAME}:${{ github.sha }}"
+          docker pull "${frontend_image}"
+          kind load docker-image "${frontend_image}" --name assignment6
 
       - name: Create namespace
         run: |
