@@ -19,3 +19,30 @@ groups:
         annotations:
           summary: "High error rate detected"
           description: "Too many failed HTTP requests"
+
+      - alert: HighMemorySaturation
+        expr: process_resident_memory_bytes{job="backend"} > 300000000
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Memory Saturation"
+          description: "Backend container memory usage has exceeded 300MB for over 30 seconds."
+
+      - alert: HighTrafficSpike
+        expr: sum(rate(http_requests_total[1m])) > 40
+        for: 10s
+        labels:
+          severity: info
+        annotations:
+          summary: "Inbound Traffic Spike"
+          description: "The application throughput has surged past 40 requests/sec"
+
+      - alert: UnauthorizedAccessSurge
+        expr: sum(rate(http_requests_total{status="401"}[1m])) > 5
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Potential Brute Force / Auth Failures"
+          description: "Anomalous surge of HTTP 401 Unauthorized responses (> 5/sec) detected on the cluster."
